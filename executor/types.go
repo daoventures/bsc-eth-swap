@@ -136,3 +136,52 @@ func ParseSwapPairRegisterEvent(abi *abi.ABI, log *types.Log) (*SwapPairRegister
 
 	return &ev, nil
 }
+
+
+
+// =================  SwapPairCreated ===================
+var (
+	SwapPairCreatedEventName = "SwapPairCreated"
+	SwapPairCreatedEventHash = ethcmm.HexToHash("0xcc0314763eabceb74cd3d30ae785c09bfe4e204af2088b3bfcdbbe5082133db5")
+)
+
+type SwapPairCreatedEvent struct {
+	EthRegisterTxHash      string
+	BEP20Addr ethcmm.Address
+	ERC20Addr ethcmm.Address
+	Name         string
+	Symbol       string
+	Decimals     uint8
+}
+
+func (ev *SwapPairCreatedEvent) ToSwapPairRegisterLog(log *types.Log) *model.SwapPairCreatedLog {
+	pack := &model.SwapPairCreatedLog{
+		BEP20Addr: ev.BEP20Addr.String(),
+		ERC20Addr: ev.ERC20Addr.String(),
+		Symbol:    ev.Symbol,
+		Name:      ev.Name,
+		Decimals:  int(ev.Decimals),
+
+		SwapPairRegisterTxHash: ev.EthRegisterTxHash,
+		SwapPairCreatTxHash:    log.TxHash.String(),
+
+		BlockHash: log.BlockHash.Hex(),
+		Height:    int64(log.BlockNumber),
+	}
+	return pack
+}
+
+func ParseSwapPairCreatedEvent(abi *abi.ABI, log *types.Log) (*SwapPairCreatedEvent, error) {
+	var ev SwapPairCreatedEvent
+
+	err := abi.Unpack(&ev, SwapPairCreatedEventName, log.Data)
+	if err != nil {
+		return nil, err
+	}
+	ev.EthRegisterTxHash =string(log.Topics[1].Bytes())
+	ev.BEP20Addr = ethcmm.BytesToAddress(log.Topics[2].Bytes())
+	ev.ERC20Addr = ethcmm.BytesToAddress(log.Topics[3].Bytes())
+
+	return &ev, nil
+}
+

@@ -60,6 +60,7 @@ func (engine *SwapPairEngine) Start() {
 	go engine.confirmSwapRequestDaemon()
 	go engine.swapPairInstanceDaemon()
 	go engine.trackSwapPairTxDaemon()
+	go engine.monitorSwapPairCreatedDaemon()
 }
 
 func (engine *SwapPairEngine) monitorSwapRequestDaemon() {
@@ -589,7 +590,6 @@ func (engine *SwapPairEngine) trackSwapPairTxDaemon() {
 				}
 				engine.swapEngine.AddSwapPairInstance(&swapPair)
 			}
-
 		}
 	}()
 
@@ -599,4 +599,61 @@ func (engine *SwapPairEngine) getSwapPairSMByRegisterTxHash(tx *gorm.DB, txHash 
 	swapPairSM := model.SwapPairStateMachine{}
 	err := tx.Where("pair_register_tx_hash = ?", txHash).First(&swapPairSM).Error
 	return &swapPairSM, err
+}
+
+func (engine *SwapPairEngine) monitorSwapPairCreatedDaemon() {
+	for {
+		swapPairCreatedLogs := make([]model.SwapPairCreatedLog, 0)
+		engine.db.Where("phase = ?", model.EventNew).Order("height asc").Limit(BatchSize).Find(&swapPairCreatedLogs)
+
+		if len(swapPairCreatedLogs) == 0 {
+			time.Sleep(SleepTime * time.Second)
+			continue
+		}
+
+		for _, swapPairCreatedEventLog := range swapPairCreatedLogs {
+			var count int64
+
+			engine.db.Model(model.SwapPairRegisterTxLog{}).Where("tx_hash = ?", swapPairCreatedEventLog.SwapPairRegisterTxHash).Count(&count)
+			if 0 < count {
+				// It's in processing by SwapPairStateMachine
+				continue
+			}
+
+			swapPair := model.SwapPair{
+				Sponsor:    "",
+				Symbol:     swapPairCreatedEventLog.Symbol,
+				Name:       swapPairCreatedEventLog.Name,
+				Decimals:   swapPairCreatedEventLog.Decimals,
+				BEP20Addr:  swapPairCreatedEventLog.BEP20Addr,
+				ERC20Addr:  swapPairCreatedEventLog.ERC20Addr,
+				Available:  true,
+				LowBound:   "0",
+				UpperBound: MaxUpperBound,
+				IconUrl:    "",
+			}
+			writeDBErr := func() error {
+				tx := engine.db.Begin()
+				if err := tx.Error; err != nil {
+					return err
+				}
+				if err := engine.insertSwapPair(tx, &swapPair); err != nil {
+					tx.Rollback()
+					return err
+				}
+				return tx.Commit().Error
+			}()
+
+			if writeDBErr != nil {
+				util.Logger.Errorf("write db error: %s", writeDBErr.Error())
+				util.SendTelegramMessage(fmt.Sprintf("write db error: %s", writeDBErr.Error()))
+			}
+			engine.swapEngine.AddSwapPairInstance(&swapPair)
+
+			engine.db.Model(model.SwapPairCreatedLog{}).Where("id = ?", swapPairCreatedEventLog.ID).Updates(
+				map[string]interface{}{
+					"phase":              model.EventHandled,
+				})
+		}
+	}
 }

@@ -77,7 +77,54 @@ func (e *BscExecutor) GetBlockAndTxEvents(height int64) (*common.BlockAndEventLo
 	}, nil
 }
 func (e *BscExecutor) GetLogs(header *types.Header) ([]interface{}, error) {
-	return e.GetSwapStartLogs(header)
+	startEvs, err := e.GetSwapStartLogs(header)
+	if err != nil {
+		return nil, err
+	}
+	pairCreatedEvs, err := e.GetSwapPairCreatedLogs(header)
+	if err != nil {
+		return nil, err
+	}
+	var res = make([]interface{}, 0, len(startEvs)+len(pairCreatedEvs))
+	res = append(append(res, startEvs...), pairCreatedEvs...)
+	return res, nil
+}
+
+func (e *BscExecutor) GetSwapPairCreatedLogs(header *types.Header) ([]interface{}, error) {
+	topics := [][]ethcmm.Hash{{SwapPairCreatedEventHash}}
+
+	blockHash := header.Hash()
+
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	logs, err := e.Client.FilterLogs(ctxWithTimeout, ethereum.FilterQuery{
+		BlockHash: &blockHash,
+		Topics:    topics,
+		Addresses: []ethcmm.Address{e.SwapAgentAddr},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	eventModels := make([]interface{}, 0, len(logs))
+	for _, log := range logs {
+		event, err := ParseSwapPairCreatedEvent(&e.SwapAgentAbi, &log)
+		if err != nil {
+			util.Logger.Errorf("parse event log error, er=%s", err.Error())
+			continue
+		}
+		if event == nil {
+			continue
+		}
+
+		eventModel := event.ToSwapPairRegisterLog(&log)
+		eventModel.Chain = e.Chain
+		util.Logger.Debugf("Found SwapPairCreated event, bep20 address: %d, erc20 address: %d, name: %s, symbol: %s, decimals: %d",
+			eventModel.BEP20Addr, eventModel.ERC20Addr, eventModel.Name, eventModel.Symbol, eventModel.Decimals)
+		eventModels = append(eventModels, eventModel)
+	}
+	return eventModels, nil
 }
 
 func (e *BscExecutor) GetSwapStartLogs(header *types.Header) ([]interface{}, error) {

@@ -108,3 +108,27 @@ type SwapPairStateMachine struct {
 func (SwapPairStateMachine) TableName() string {
 	return "swap_pair_sm"
 }
+
+type SwapPairCreatedLog struct {
+	gorm.Model
+	Chain string `gorm:"not null;index:swap_pair_created_log_chain"`
+
+	SwapPairRegisterTxHash string `gorm:"unique;not null"`
+	SwapPairCreatTxHash    string `gorm:"unique;not null"`
+
+	BEP20Addr string `gorm:"not null"`
+	ERC20Addr string `gorm:"not null"`
+
+	Symbol   string `gorm:"not null;index:swap_pair_created_log_symbol"`
+	Name     string `gorm:"not null"`
+	Decimals int    `gorm:"not null"`
+
+	BlockHash    string   `gorm:"not null"`
+	Height       int64    `gorm:"not null"`
+
+	Phase EventStatus `gorm:"not null;index:swap_pair_created_log_phase"`
+}
+
+func (SwapPairCreatedLog) TableName() string {
+	return "swap_pair_created_log"
+}
