@@ -1,0 +1,8 @@
+[Unit]
+Description=ETH<->BSC Swap Backend
+
+[Service]
+ExecStart=/work/bsc-eth-swap/start.sh
+
+[Install]
+WantedBy=multi-user.target
